@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Farhad</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #d8e2db;
+    --fg: #16201c;
+    --muted: #55655d;
+    --focus: #2f5bea;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17201c;
+      --fg: #e6eee9;
+      --muted: #8fa39a;
+      --focus: #8aa6ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17201c;
+    --fg: #e6eee9;
+    --muted: #8fa39a;
+    --focus: #8aa6ff;
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html { height: 100%; scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--fg);
+    font-family: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  }
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: manipulation; }
+  header {
+    position: fixed; left: clamp(20px, 4vw, 48px); right: 20px;
+    top: calc(env(safe-area-inset-top, 0px) + clamp(20px, 4vh, 44px));
+    pointer-events: none;
+  }
+  h1 {
+    margin: 0; font-weight: 800; line-height: .9; letter-spacing: -.04em;
+    font-size: clamp(48px, 9vw, 112px);
+  }
+  header p { margin: .6em 0 0; max-width: 34ch; color: var(--muted); font-size: clamp(15px, 1.6vw, 18px); line-height: 1.4; }
+  #info {
+    position: fixed; left: clamp(20px, 4vw, 48px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(20px, 4vh, 40px));
+    max-width: min(46ch, 60vw); pointer-events: none;
+    transition: opacity .2s;
+  }
+  #info .name { font-size: clamp(22px, 3vw, 34px); font-weight: 800; letter-spacing: -.02em; }
+  #info .desc { color: var(--muted); margin-top: .2em; font-size: 15px; line-height: 1.45; }
+  #info .url { margin-top: .35em; font-size: 14px; font-weight: 600; }
+  nav {
+    position: fixed; right: clamp(20px, 4vw, 48px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(20px, 4vh, 40px));
+    display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  }
+  nav a { color: var(--muted); text-decoration: none; font-size: 14px; padding: 2px 4px; border-radius: 4px; }
+  nav a:hover { color: var(--fg); }
+  nav a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; color: var(--fg); }
+  @media (max-width: 600px) {
+    nav { display: none; }
+    #info { max-width: calc(100% - 40px); }
+  }
+</style>
+</head>
+<body>
+<canvas id="scene" aria-hidden="true"></canvas>
+
+<header>
+  <h1>Farhad</h1>
+  <p>Press a colored key to visit one of my projects. Your own keyboard works too.</p>
+</header>
+
+<div id="info" aria-live="polite">
+  <div class="name">Pick a key</div>
+  <div class="desc">Each colored key opens a different site in a new tab.</div>
+</div>
+
+<nav id="links" aria-label="Projects"></nav>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ============================================================
+   EDIT YOUR PROJECTS HERE
+   label: text printed on the keycap (keep it short)
+   ============================================================ */
+const PROJECTS = [
+  { label: "GitHub",   title: "GitHub",        desc: "Code, experiments and open-source work.",        url: "https://github.com/",           color: "#2f5bea" },
+  { label: "Blog",     title: "Blog",          desc: "Notes on what I'm building and learning.",        url: "https://example.com/blog",      color: "#f2b632" },
+  { label: "Shop",     title: "Shop",          desc: "A small store project built end to end.",         url: "https://example.com/shop",      color: "#ef6f9c" },
+  { label: "Design",   title: "Design work",   desc: "Interfaces, mockups and visual experiments.",     url: "https://example.com/design",    color: "#1f9e8f" },
+  { label: "Contact",  title: "Contact",       desc: "Send me an email.",                               url: "mailto:hello@example.com",      color: "#7a5cf0" },
+];
+
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------- Accessible fallback links ---------- */
+const nav = document.getElementById("links");
+PROJECTS.forEach(p => {
+  const a = document.createElement("a");
+  a.href = p.url; a.target = "_blank"; a.rel = "noopener";
+  a.textContent = p.title;
+  a.addEventListener("focus", () => showInfo(p));
+  nav.appendChild(a);
+});
+
+/* ---------- Renderer, scene, camera ---------- */
+const canvas = document.getElementById("scene");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const maxAniso = renderer.capabilities.getMaxAnisotropy();
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 200);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x55655d, 0.75));
+const sun = new THREE.DirectionalLight(0xffffff, 0.85);
+sun.position.set(-6, 14, 9);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 11, bottom: -11, near: 1, far: 40 });
+sun.shadow.bias = -0.0005;
+scene.add(sun);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.ShadowMaterial({ opacity: 0.18 }));
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.75;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const board = new THREE.Group();
+scene.add(board);
+
+/* ---------- Geometry helpers ---------- */
+function roundedRect(w, h, r) {
+  const s = new THREE.Shape(), x = -w / 2, y = -h / 2;
+  s.moveTo(x + r, y);
+  s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r);
+  s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r);
+  s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y);
+  return s;
+}
+function capGeometry(w) {
+  const bevel = 0.06;
+  const g = new THREE.ExtrudeGeometry(roundedRect(w - 0.12 - bevel * 2, 0.88 - bevel * 2, 0.1), {
+    depth: 0.35, bevelEnabled: true, bevelThickness: 0.08, bevelSize: bevel, bevelSegments: 3, curveSegments: 6
+  });
+  g.rotateX(-Math.PI / 2); // extrude upward; top face at y ≈ 0.43
+  return g;
+}
+
+/* ---------- Keycap legends drawn on canvas ---------- */
+function legendTexture(text, w, ink, centered) {
+  const PX = 256, cw = Math.max(64, Math.round((w - 0.32) * PX)), ch = Math.round(0.66 * PX);
+  const c = document.createElement("canvas");
+  c.width = cw; c.height = ch;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = ink;
+  const family = '"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif';
+  if (centered) {
+    let size = 78;
+    do { ctx.font = `800 ${size}px ${family}`; size -= 2; } while (ctx.measureText(text).width > cw * 0.78 && size > 20);
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(text, cw / 2, ch / 2 + 4);
+    ctx.font = `600 40px ${family}`;
+    ctx.textAlign = "right"; ctx.textBaseline = "top";
+    ctx.fillText("↗", cw - 10, 6);
+  } else if (text) {
+    ctx.font = `600 ${text.length > 1 ? 40 : 66}px ${family}`;
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText(text, 14, 10);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.encoding = THREE.sRGBEncoding;
+  t.anisotropy = maxAniso;
+  return t;
+}
+
+/* ---------- Layout ---------- */
+const PALETTE = {
+  alpha: { cap: "#f2f1ec", ink: "#2c342f" },
+  mod:   { cap: "#9fb2a8", ink: "#1d2622" },
+  accent:{ cap: "#2b2f33", ink: "#f2f1ec" },
+  space: { cap: "#f2f1ec", ink: "#2c342f" },
+};
+const k = (label, w = 1, id = label.toLowerCase(), kind = "alpha") => ({ label, w, id, kind });
+const letters = (s) => s.split("").map(c => k(c, 1, c.toLowerCase()));
+
+const ROWS = [
+  { spacing: 0.25, keys: PROJECTS.map((p, i) => ({ label: p.label, w: 0, id: "project" + i, kind: "project", project: p })) },
+  { keys: [k("esc", 1, "escape", "mod"), ...letters("1234567890"), k("delete", 2, "backspace", "mod")] },
+  { keys: [k("tab", 1.5, "tab", "mod"), ...letters("QWERTYUIOP"), k("\\", 1.5, "\\")] },
+  { keys: [k("caps", 1.75, "capslock", "mod"), ...letters("ASDFGHJKL"), k("enter", 2.25, "enter", "accent")] },
+  { keys: [k("shift", 2.25, "shift", "mod"), ...letters("ZXCVBNM"), k(",", 1, ","), k(".", 1, "."), k("shift", 1.75, "shift", "mod")] },
+  { keys: [k("ctrl", 1.25, "control", "mod"), k("alt", 1.25, "alt", "mod"), k("", 7.5, " ", "space"), k("alt", 1.25, "alt", "mod"), k("fn", 1.75, "fn", "mod")] },
+];
+const ROW_Z = [-2.8, -1.4, -0.35, 0.7, 1.75, 2.8];
+const BOARD_W = 13;
+
+const keys = [], keysById = {}, pickables = [];
+
+function buildKeyboard() {
+  // Case
+  const caseGeo = new THREE.ExtrudeGeometry(roundedRect(BOARD_W + 0.8, 6.5, 0.35), {
+    depth: 0.5, bevelEnabled: true, bevelThickness: 0.1, bevelSize: 0.1, bevelSegments: 4, curveSegments: 10
+  });
+  caseGeo.rotateX(-Math.PI / 2);
+  const caseMesh = new THREE.Mesh(caseGeo, new THREE.MeshStandardMaterial({ color: "#2b2f33", roughness: 0.7, metalness: 0.1 }));
+  caseMesh.position.y = -0.65;
+  caseMesh.castShadow = caseMesh.receiveShadow = true;
+  board.add(caseMesh);
+
+  ROWS.forEach((row, r) => {
+    const spacing = row.spacing || 0;
+    if (row.keys[0].kind === "project") {
+      const n = row.keys.length;
+      const w = (BOARD_W - (n - 1) * spacing) / n;
+      row.keys.forEach(key => key.w = w);
+    }
+    let x = -BOARD_W / 2;
+    row.keys.forEach(spec => {
+      const isProject = spec.kind === "project";
+      const pal = isProject ? { cap: spec.project.color, ink: "#ffffff" } : PALETTE[spec.kind];
+
+      const group = new THREE.Group();
+      group.position.set(x + spec.w / 2, 0, ROW_Z[r]);
+
+      const capMat = new THREE.MeshStandardMaterial({ color: pal.cap, roughness: 0.55, metalness: 0.02 });
+      const cap = new THREE.Mesh(capGeometry(spec.w), capMat);
+      cap.castShadow = cap.receiveShadow = true;
+      group.add(cap);
+
+      const legend = new THREE.Mesh(
+        new THREE.PlaneGeometry(spec.w - 0.32, 0.66),
+        new THREE.MeshStandardMaterial({ map: legendTexture(spec.label, spec.w, pal.ink, isProject), transparent: true, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2 })
+      );
+      legend.rotation.x = -Math.PI / 2;
+      legend.position.y = 0.432;
+      group.add(legend);
+
+      board.add(group);
+      const key = { ...spec, group, capMat, cur: 0, down: false, hover: false, timer: 0 };
+      cap.userData.key = legend.userData.key = key;
+      pickables.push(cap, legend);
+      keys.push(key);
+      (keysById[spec.id] = keysById[spec.id] || []).push(key);
+
+      x += spec.w + spacing;
+    });
+  });
+}
+
+/* ---------- Info panel ---------- */
+const info = document.getElementById("info");
+function showInfo(p) {
+  const host = p.url.startsWith("mailto:") ? p.url.slice(7) : p.url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  info.innerHTML = "";
+  const name = document.createElement("div"); name.className = "name"; name.textContent = p.title; name.style.color = p.color;
+  const desc = document.createElement("div"); desc.className = "desc"; desc.textContent = p.desc;
+  const url = document.createElement("div"); url.className = "url"; url.textContent = host;
+  info.append(name, desc, url);
+}
+
+/* ---------- Interaction ---------- */
+function press(key, ms = 150) {
+  key.down = true;
+  clearTimeout(key.timer);
+  key.timer = setTimeout(() => { key.down = false; }, ms);
+}
+function openProject(p) {
+  window.open(p.url, "_blank", "noopener");
+}
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2(9, 9);
+let parallax = { x: 0, y: 0 }, hovered = null;
+
+function pick(e) {
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObjects(pickables, false)[0];
+  return hit ? hit.object.userData.key : null;
+}
+
+canvas.addEventListener("pointermove", e => {
+  parallax.x = (e.clientX / innerWidth) * 2 - 1;
+  parallax.y = (e.clientY / innerHeight) * 2 - 1;
+  const key = pick(e);
+  if (hovered && hovered !== key) hovered.hover = false;
+  hovered = key;
+  if (key) key.hover = true;
+  canvas.style.cursor = key ? "pointer" : "default";
+  if (key && key.project) showInfo(key.project);
+});
+canvas.addEventListener("pointerleave", () => { if (hovered) hovered.hover = false; hovered = null; });
+canvas.addEventListener("pointerdown", e => {
+  const key = pick(e);
+  if (!key) return;
+  press(key);
+  if (key.project) { showInfo(key.project); openProject(key.project); }
+});
+
+addEventListener("keydown", e => {
+  if (e.target.closest && e.target.closest("a")) return;
+  const list = keysById[e.key.toLowerCase()];
+  if (!list) return;
+  if (e.key === " " || e.key === "Tab") e.preventDefault();
+  list.forEach(key => { clearTimeout(key.timer); key.down = true; });
+});
+addEventListener("keyup", e => {
+  const list = keysById[e.key.toLowerCase()];
+  if (list) list.forEach(key => { key.down = false; });
+});
+
+/* ---------- Camera fit ---------- */
+function fit() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  const vfov = THREE.MathUtils.degToRad(camera.fov);
+  const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
+  const d = Math.max((15.5 / 2) / Math.tan(hfov / 2), (10 / 2) / Math.tan(vfov / 2));
+  camera.position.set(0, d * 0.8, d * 0.6);
+  camera.lookAt(0, 0, -0.9);
+  camera.updateProjectionMatrix();
+}
+addEventListener("resize", fit);
+
+/* ---------- Loop ---------- */
+const clock = new THREE.Clock();
+const hoverTint = new THREE.Color(0xffffff);
+function tick() {
+  const t = clock.getElapsedTime();
+  keys.forEach(key => {
+    const target = key.down ? -0.24 : (key.hover ? 0.05 : 0);
+    key.cur += (target - key.cur) * 0.35;
+    key.group.position.y = key.cur;
+    const glow = key.hover && key.project ? 0.12 : 0;
+    key.capMat.emissive.copy(hoverTint).multiplyScalar(glow);
+  });
+  if (!reduceMotion) {
+    board.rotation.y += (parallax.x * 0.1 - board.rotation.y) * 0.05;
+    board.rotation.x += (parallax.y * 0.05 - board.rotation.x) * 0.05;
+    board.position.y = Math.sin(t * 0.8) * 0.06;
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+
+/* ---------- Start once the font is ready (so legends render in it) ---------- */
+function start() {
+  if (keys.length) return;
+  buildKeyboard();
+  fit();
+  tick();
+  if (!reduceMotion) {
+    "farhad".split("").forEach((ch, i) => {
+      setTimeout(() => (keysById[ch] || []).forEach(key => press(key, 120)), 700 + i * 140);
+    });
+  }
+}
+try {
+  Promise.all([
+    document.fonts.load('800 40px "Bricolage Grotesque"'),
+    document.fonts.load('600 40px "Bricolage Grotesque"'),
+  ]).then(start, start);
+} catch (e) { start(); }
+setTimeout(start, 2500);
+</script>
+</body>
+</html>
